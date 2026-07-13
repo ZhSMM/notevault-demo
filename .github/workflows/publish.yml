@@ -57,9 +57,11 @@ jobs:
 
       - name: Install SSG dependencies
         working-directory: _notevault
+        # 注意：fast-glob / markdown-it-anchor 是 devDependencies，
+        # SSG 脚本要用到，所以不能加 --prod
         run: |
           npm install -g pnpm
-          pnpm install --prod --frozen-lockfile
+          pnpm install --frozen-lockfile
 
       - name: Determine base URL
         id: base
