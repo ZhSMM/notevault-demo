@@ -1,0 +1,99 @@
+# NoteVault Demo · 自动发布到 GitHub Pages
+#
+# 这个 demo 仓库只装示例笔记（sample-vault），
+# workflow 会从 notevault 仓库 checkout 拉 SSG 引擎来 build。
+#
+# 用法：
+# 1. fork / push 这个仓库
+# 2. Settings → Pages → Source: GitHub Actions
+# 3. push main 自动 build + deploy
+
+name: Publish demo site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Base URL（用户页填 /，项目页填 /REPO/）'
+        required: false
+        default: '/notevault-demo/'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 这个仓库是 demo，不需要历史
+          fetch-depth: 1
+
+      - name: Checkout NoteVault source (for SSG engine)
+        uses: actions/checkout@v4
+        with:
+          repository: ZhSMM/notevault
+          ref: main
+          path: _notevault
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Install SSG dependencies
+        working-directory: _notevault
+        run: |
+          npm install -g pnpm
+          pnpm install --prod --frozen-lockfile
+
+      - name: Determine base URL
+        id: base
+        run: |
+          if [ -n "${{ github.event.inputs.base_url }}" ]; then
+            echo "value=${{ github.event.inputs.base_url }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.repository }}" = "${{ github.repository_owner }}/${{ github.repository_owner }}.github.io" ]; then
+            echo "value=/" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=/${{ github.event.repository.name }}/" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build static site
+        working-directory: _notevault
+        run: |
+          node scripts/static-build.mjs \
+            --vault "$GITHUB_WORKSPACE" \
+            --out "$GITHUB_WORKSPACE/.public" \
+            --base "${{ steps.base.outputs.value }}"
+
+      - name: Add .nojekyll
+        run: touch .public/.nojekyll
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
